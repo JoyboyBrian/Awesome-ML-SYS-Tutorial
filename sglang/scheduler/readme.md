@@ -31,13 +31,24 @@
 
 Scheduler 通过如下的核心全局状态来管理所有的 active request：
 
-1. `waiting_queue`：顾名思义，`waiting_queue` 是一个优先队列，用于存放所有的 active request。所有还没有完成 prefill 的 request 和在 decode 阶段被 retract 回来的 request 都会被放入队列中；根据优先级决定出队顺序。
+1. `waiting_queue`：顾名思义，`waiting_queue` 是一个优先队列，用于存放所有的 active request。所有还没有完成 prefill 的 request 和在 decode 阶段被 retract 回来的 request 都会被放入队列中；每轮循环之前，如果队列不为空，Scheduler 会调用 `self.policy.calc_priority(self.waiting_queue)` 函数，根据预设的策略（如 first come first serve、最长前缀匹配等）对队列进行重新排序。
 
-2. `new_batch`：即将进入 prefill/extend 阶段的 requests。考虑到 chunked prefill，超出了 chunk size 的 request 会被拆分成多个 chunk，分别进行 prefill/extend。结束了 prefill/extend， `new_batch` 在下一轮循环中转为 `last_batch`，随后被 merge 到 `running_batch` 中。
+2. `new_batch`：即将进入 prefill/extend 阶段的 requests。考虑到 chunked prefill 的特性，如果一个请求非常长，超过了 `chunked_prefill_size`，它会被标记为 `self.chunked_req = True`，接着被特殊处理：只有当这个请求的所有 chunks 都 prefill 完成后，它才会从 `last_batch` 真正合并到 `running_batch` 中参与 Decode。状态转换轨迹：`waiting_queue -> new_batch (当前轮) -> last_batch (下一轮开始时) -> running_batch (被合并)`。
 
-3. `running_batch`：即将进入 decode 阶段的 requests。如果 decode 期间可用 kv cache 不足，`Scheduler` 会通过  `retract_decode`  从  `running_batch`  中撤回某些 requests，将其返回到  `waiting_queue`。（PS：坦诚说 `running_batch` 和 `new_batch` 这两个命名至少在我看来，是有些误导性的。可能更准确的说法是 `prefill_batch` 和 `decode_batch`）
+3. `running_batch`：即将进入 decode 阶段的 requests。当 GPU 显存（KV Cache Pool）碎片化严重或空间不足以支撑所有请求产生下一个 token 时，Scheduler 会通过  `retract_decode`  从  `running_batch`  中撤回某些 requests，将其返回到  `waiting_queue`。（PS：坦诚说 `running_batch` 和 `new_batch` 这两个命名至少在我看来，是有些误导性的。可能更准确的说法是 `prefill_batch` 和 `decode_batch`）
 
 4. `cur_batch`：在 Scheduler 主循环 `run_batch` 函数中当前正在被处理的 requests。注意到 SGLang 是 prefill first 的，当不存在新的 prefill batch 时，才进入 decode 阶段。因此，当 `new_batch` 存在时，`cur_batch = new_batch`，否则 `cur_batch = running_batch`。
+
+```python
+    # 源码简化逻辑 (get_next_batch_to_run)
+    new_batch = self.get_new_batch_prefill()
+    if new_batch is not None:
+        ret = new_batch  # 优先运行 Prefill
+    else:
+        # 只有在没有新 Prefill 任务时，才更新并运行 running_batch (Decode)
+        self.running_batch = self.update_running_batch(self.running_batch)
+        ret = self.running_batch
+```
 
 ```mermaid
 graph TD
