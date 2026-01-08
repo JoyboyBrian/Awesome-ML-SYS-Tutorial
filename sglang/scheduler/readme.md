@@ -291,53 +291,7 @@ class ReqToTokenPool:
 | **共享状态 (策略层)** | 未知 | R1 R2 R3 共享 | R1 R2 R3 共享 | R1 R2 共享 | 未知 | R1 私有 | 未知 | R2 私有 | 未知 | R3 私有 | R3 私有 | 未知 |
 
 
-```mermaid
-graph TD
-    %% 定义物理池作为基座
-    subgraph L3 [L3: TokenToKVPool 物理显存层]
-        direction LR
-        S10[Slot 10: A] --- S11[Slot 11: B] --- S12[Slot 12: C] --- S20[Slot 20: D] --- S25[Slot 25: F]
-    end
 
-    %% 阶段一：R1 开荒
-    subgraph Step1 [阶段 1: Request 1 运行中]
-        direction TB
-        R1_Logic["<b>Request 1: A-B-C-D</b>"]
-        
-        subgraph R1_Mapping [L1 & L2 映射关系]
-            M1["[10, 11] <br/>命中 RadixTree"] 
-            M2["[12, 20] <br/>新分配 (私有)"]
-        end
-        
-        R1_Logic --> M1
-        R1_Logic --> M2
-    end
-
-    %% 核心转换动作
-    Step1 == "Prefill结束: 异步 Insert C 到 RadixTree" ==> Step2
-
-    %% 阶段二：R2 复用
-    subgraph Step2 [阶段 2: Request 2 随后进入]
-        direction TB
-        R2_Logic["<b>Request 2: A-B-C-F</b>"]
-        
-        subgraph R2_Mapping [L1 & L2 映射关系]
-            M3["[10, 11, 12] <br/>全部命中 RadixTree"]
-            M4["[25] <br/>新分配 (私有)"]
-        end
-        
-        R2_Logic --> M3
-        R2_Logic --> M4
-    end
-
-    %% 映射到物理层
-    M1 -.-> S10 & S11
-    M2 -.-> S12 & S20
-    M3 -.-> S10 & S11 & S12
-    M4 -.-> S25
-
-    %% 样式美化
-    style S12 fill:#f96,stroke:#333,stroke-width:2px
-    style Step1 fill:#f5f5f5,stroke:#999
-    style Step2 fill:#e1f5fe,stroke:#01579b
-```
+<div style="text-align: center;">
+<img src="./pics/cache.svg" alt="cache" width="800" height="600">
+</div>
