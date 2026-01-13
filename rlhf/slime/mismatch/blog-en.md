@@ -33,8 +33,6 @@ To quantify this discrepancy, we use the K3 KL divergence (see [Reference 8](htt
 
 Miles treats this mismatch as a non-negligible aspect of RL system design. Users can choose to eliminate it entirely for correctness or mitigate it for efficiency.
 
-> ⚠️ Call for Collaboration: Miles has proven remarkably resilient to mismatch across various scales. We attempted to force a baseline collapse but were unsuccessful. If you are aware of open-source RL tasks that reproducibly collapse due to mismatch on a single node, please reach out to us.
-
 ## Why Training and Inference Can Be Different
 
 The fundamental reason is the non-associative property of floating point addition. For example, when the batch size is small, kernels may use split-reduction optimizations, which change the reduction order depending on the input size. Since floating-point arithmetic is non-associative, accumulating values in different orders introduces numerical discrepancies. Each tensor-core instruction may also perform reduction internally in a different order (ref: Thinking Machine Lab [blog](https://thinkingmachines.ai/blog/defeating-nondeterminism-in-llm-inference/)).
@@ -184,11 +182,9 @@ At the moment, we have not found a solid theoretical reason why these agent task
 
 ⚠️ Some researchers also suggest an alternative: if post-processing is unavoidable, you may re-run a forward pass on the rollout engine for the post-processed sequence to obtain the correct log probs. However, this cost is significant, and we believe that directly removing post-processing is often a practical choice for strong base models.
 
-Additionally, due to limited resource and time, we chose to use GRPO instead of PPO to demonstrate IS behavior.
-
 ### Existence of Mismatch
 
-We first confirm that as the training goes on, the K3 KL between Rollout Engine and Training Engine will increase. Our setting is:
+Due to limited resource and time, we chose to use GRPO instead of PPO to demonstrate IS behavior. We first confirm that on dense models, as the training goes on, even if training does not collapse, the K3 KL between Rollout Engine and Training Engine will increase. Our setting is:
 - Training dataset: [Link](https://huggingface.co/datasets/aaabiao/dapo_filter)
 - Eval dataset: aime 24 + aime 25
 - Base Model: Qwen3-4b-base ([Link](https://huggingface.co/Qwen/Qwen3-4B-Base))
@@ -205,11 +201,17 @@ We first confirm that as the training goes on, the K3 KL between Rollout Engine 
 
 You can see in the initial step of training, as the model learns and perplexity drops, K3 KL actually drops. But after 600 steps, although the train and eval reward remains stable, the K3 KL metrics start to increase dramatically, indicating the existence of training and rollout mismatch.
 
-### IS Won't Harm Performance
+On MoE models, the diff in logits causes the training and inference models to select different activated experts, leading to significantly larger train-inference mismatch in MoE models compared to dense models (although on Qwen30B-A3B, when not collapsed, the magnitude of K3 KL is similar to Qwen3-4B, possibly). We successfully found cases where models collapse due to train-inference mismatch (experimental settings are the same as dense models except for the base model). Below are some specific experimental results [TODO add some pic]
 
-> See our full weight&bias log [here](https://wandb.ai/ch271828n-team/slime-dapo/reports/IS-Has-No-Harm--VmlldzoxNTE3NTM3MQ?accessToken=vbaw93cjkyi8d6iul7gzvccehf2ugff1cicfcmlaxjv88n875i0ip1ixqfr42s9b).
+Around step 320, we first observed a drop in grad norm (~0.07 -> ~0.02), which is usually a precursor to collapse. Then reward dropped sharply, and K3 KL rose dramatically. Although reward later recovered to normal levels, the grad norm was already abnormal at this point, so we can consider the training to have collapsed.
 
-In our experiments, we also verified that enabling distribution correction—including several commonly used configurations—does not degrade performance or destabilize training. To demonstrate this, we enabled different IS-related options at the beginning of training and compared them against a baseline with no IS correction.
+[TODO: Perhaps show more specific metrics such as ratio max/min?]
+
+### When Mismatch is Small, IS Won't Harm Performance
+
+> Full wandb log for Qwen3-4B can be found [here](https://wandb.ai/ch271828n-team/slime-dapo/reports/IS-Has-No-Harm--VmlldzoxNTE3NTM3MQ?accessToken=vbaw93cjkyi8d6iul7gzvccehf2ugff1cicfcmlaxjv88n875i0ip1ixqfr42s9b).
+
+In our Qwen3-4B experiments, we verified that enabling TIS/MIS (including several commonly used configurations) does not degrade performance or destabilize training. To demonstrate this, we enabled different IS-related options at the beginning of training and compared them against a baseline with no IS correction.
 Below are the four configurations we evaluated:
 
 1. Baseline
@@ -238,19 +240,20 @@ We also examined the K3 KL divergence for these runs. We observed that across al
 </p>
 
 
-### IS Can Suppress KL Increase
+### When Mismatch is Large, TIS/MIS Can Solve Collapse
 
-To test whether MIS (IS + RS + BN) works, we continue training on step 650, and the result is below. You can see that for the base run, kl continues to increase, but with MIS, the increasing trend is successfully depressed and starts to decrease.
+> Full wandb log for Qwen30B-A3B can be found [here](https://api.wandb.ai/links/peiranxu_org/5rx2wvfu) 
+>
+> ckpt address can be found here [TODO]
 
-<div align="center">
-  <img src="pics/is-kl-suppression.png" alt="IS Can Suppress KL Increase" width="50%">
-</div>
+In Qwen30B-A3B, we took a checkpoint from 300 steps and continued training with different TIS/MIS settings. We found that properly configured TIS + MIS can effectively suppress collapse caused by train-inference mismatch. We conducted experiments with 4 different settings:
 
-<!-- ⚠️: Due to limited resources and time in academia, our experiments are primarily conducted on small-scale dense models, and the conclusions may differ from those of large-scale MOE training. Please look forward to our future blogs with collaboration across more industrial partners. -->
+* config 1: token TIS [0.5, 2.0] + geometric MIS [0.99, 1.001] + batch norm --> still collapsed
+* config 2: token TIS [0.5, 2.0] + geometric MIS [0.99, 1.001] + batch norm --> did not collapse
+* config 3: token TIS [0.5, 2.0] + geometric MIS [0.99, 1.001] --> did not collapse
+* config 4: token TIS [0.5, 2.0] --> collapsed
 
-### Large-scale MoE Models
-
-We further conducted experiements on MoE models. We take Qwen3-30B-A3B-Base as the startline and share similar experimental settings with dense model.
+[TODO: add some pics]
 
 
 
