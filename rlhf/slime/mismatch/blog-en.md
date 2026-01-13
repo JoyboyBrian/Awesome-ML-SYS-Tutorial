@@ -201,11 +201,44 @@ Due to limited resource and time, we chose to use GRPO instead of PPO to demonst
 
 You can see in the initial step of training, as the model learns and perplexity drops, K3 KL actually drops. But after 600 steps, although the train and eval reward remains stable, the K3 KL metrics start to increase dramatically, indicating the existence of training and rollout mismatch.
 
-On MoE models, the diff in logits causes the training and inference models to select different activated experts, leading to significantly larger train-inference mismatch in MoE models compared to dense models (although on Qwen30B-A3B, when not collapsed, the magnitude of K3 KL is similar to Qwen3-4B, possibly). We successfully found cases where models collapse due to train-inference mismatch (experimental settings are the same as dense models except for the base model). Below are some specific experimental results [TODO add some pic]
+On MoE models, the diff in logits causes the training and inference models to select different activated experts, leading to significantly larger train-inference mismatch in MoE models compared to dense models (although on Qwen30B-A3B, when not collapsed, the magnitude of K3 KL is similar to Qwen3-4B, possibly). We successfully found cases where models collapse due to train-inference mismatch (experimental settings are the same as dense models except for the base model). Below are some specific experimental results.
+
+<div align="center">
+  <img src="pics/moe-origin-reward.png" alt="moe origin reward" width="50%">
+</div>
+
+<div align="center">
+  <img src="pics/moe-origin-mis-k3.png" alt="moe mis k3" width="45%" />
+  <img src="pics/moe-origin-resp.png" alt="moe resp_len" width="42%" />
+</div>
 
 Around step 320, we first observed a drop in grad norm (~0.07 -> ~0.02), which is usually a precursor to collapse. Then reward dropped sharply, and K3 KL rose dramatically. Although reward later recovered to normal levels, the grad norm was already abnormal at this point, so we can consider the training to have collapsed.
 
-[TODO: Perhaps show more specific metrics such as ratio max/min?]
+We further ensure the situation by continuing the training based on the last checkpoint before collapase. We observe the same situation in this settings. This stable collape ensures the existence of training/inference mismatch.
+
+<div align="center">
+  <img src="pics/moe-continue-reward.png" alt="moe continue reward" width="50%">
+</div>
+
+<details>
+<summary>More metrics on MoE experiments</summary>
+
+<div align="center">
+  <img src="pics/moe-origin-ratio1.png" alt="moe ratio 1" width="100%">
+</div>
+
+<div align="center">
+  <img src="pics/moe-origin-ratio2.png" alt="moe ratio 2" width="100%">
+</div>
+
+<div align="center">
+  <img src="pics/moe-origin-diff.png" alt="moe diff train/inference" width="50%">
+</div>
+
+</details>
+
+
+<!-- [TODO: Perhaps show more specific metrics such as ratio max/min?] -->
 
 ### When Mismatch is Small, IS Won't Harm Performance
 
@@ -244,7 +277,9 @@ We also examined the K3 KL divergence for these runs. We observed that across al
 
 > Full wandb log for Qwen30B-A3B can be found [here](https://api.wandb.ai/links/peiranxu_org/5rx2wvfu) 
 >
-> ckpt address can be found here [TODO]
+> ckpt address can be found here [here]()
+
+<!-- the link should be revised later -->
 
 In Qwen30B-A3B, we took a checkpoint from 300 steps and continued training with different TIS/MIS settings. We found that properly configured TIS + MIS can effectively suppress collapse caused by train-inference mismatch. We conducted experiments with 4 different settings:
 
@@ -253,8 +288,17 @@ In Qwen30B-A3B, we took a checkpoint from 300 steps and continued training with 
 * config 3: token TIS [0.5, 2.0] + geometric MIS [0.99, 1.001] --> did not collapse
 * config 4: token TIS [0.5, 2.0] --> collapsed
 
-[TODO: add some pics]
+<!-- [TODO: add some pics] -->
 
+<div align="center">
+  <img src="pics/moe-config1-reward.png" alt="config1" width="45%">
+  <img src="pics/moe-config2-reward.png" alt="config2" width="45%">
+</div>
+
+<div align="center">
+  <img src="pics/moe-config3-reward.png" alt="config3" width="45%">
+  <img src="pics/moe-config4-reward.png" alt="config4" width="45%">
+</div>
 
 
 ## Usage
