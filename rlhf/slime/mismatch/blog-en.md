@@ -17,7 +17,7 @@ In this post, we further discuss the first work and share our understanding of t
 
 "Training-Inference Mismatch" refers to the numerical inconsistencies that arise between the rollout (inference) engine and the training engine. Even when utilizing identical model weights, these engines often produce divergent log-probabilities for the same token sequence. In this post, we analyze the root causes of this divergence and present Miles' dual-approach solution.
 
-For those seeking absolute correctness, we offer a [Truly On Policy mode](https://github.com/radixark/Miles/blob/main/examples/true_on_policy/README.md) that achieves bitwise-exact alignment between SGLang and FSDP. For those prioritizing throughput, we provide Algorithmic Mitigation strategies, such as [Masked Importance Sampling (MIS)](https://richardli.xyz/rl-collapse-3) and [Truncated Importance Sampling (TIS)](https://fengyao.notion.site/off-policy-rl#279721e3f6c48092bbe2fcfe0e9c6b33). Our experiments demonstrate that MIS effectively suppresses mismatch growth during late-stage training while preserving high performance, making it a robust default for RL practitioners.
+For those seeking absolute correctness, we offer a [Truly On Policy mode](https://github.com/radixark/Miles/blob/main/examples/true_on_policy/README.md) that achieves bitwise-exact alignment between SGLang and FSDP/Megatron. For those prioritizing throughput, we provide Algorithmic Mitigation strategies, such as [Masked Importance Sampling (MIS)](https://richardli.xyz/rl-collapse-3) and [Truncated Importance Sampling (TIS)](https://fengyao.notion.site/off-policy-rl#279721e3f6c48092bbe2fcfe0e9c6b33). Our experiments demonstrate that MIS effectively suppresses mismatch growth during late-stage training while preserving high performance, making it a robust default for RL practitioners.
 
 ## What is Training Inference Mismatch?
 
@@ -27,11 +27,21 @@ For those seeking absolute correctness, we offer a [Truly On Policy mode](https:
 
 Training-Inference Mismatch refers to the numerical inconsistency between the rollout (inference) engine and the training engine. Even when both engines utilize identical model weights, they often produce slightly different log-probabilities for the same token sequence. This divergence stems from infrastructure-level variances, such as differing CUDA kernels, batch sizes, expert selection logic, and reduction orders (see Thinking Machine Lab [blog](https://thinkingmachines.ai/blog/defeating-nondeterminism-in-llm-inference/)).
 
-> ⚠️ While it is widely claimed that training-inference mismatch can trigger RL collapse, we have not encountered this issue in practice, even during the post-training of frontier models like GLM 4.6.
-
 To quantify this discrepancy, we use the K3 KL divergence (see [Reference 8](http://joschu.net/blog/kl-approx.html) for details). In dense models, K3 KL typically ranges from $10^{-5}$ to $10^{-3}$, while in Mixture-of-Experts (MoE) models, it increases to between $10^{-3}$ and $10^{-1}$. Although this mismatch is often minor, it technically introduces an off-policy effect: the policy used for sampling is not strictly identical to the one used for loss computation. In complex scenarios, such as multi-turn agent tasks, existing literature suggests that these small discrepancies can accumulate over time, potentially destabilizing or collapsing the training process (e.g., [blog 1](https://richardli.xyz/rl-collapse) and [blog 2](https://thinkingmachines.ai/blog/defeating-nondeterminism-in-llm-inference/)).
 
 Miles treats this mismatch as a non-negligible aspect of RL system design. Users can choose to eliminate it entirely for correctness or mitigate it for efficiency.
+
+## Disclaimer: Miles’ Resilience in Practice
+
+While it is a widely held belief in the RL community that training-inference mismatch is a frequent "training killer," our experience with Miles suggests otherwise. Over the past three months, we conducted more than 300 extensive runs across various settings—specifically targeting configurations notoriously prone to instability in other frameworks. To our surprise, not a single task exhibited a 100% collapse rate. In fact, Miles proved to be so resilient that even in these "high-risk" settings, a fresh re-run from scratch would almost always train successfully.
+
+Most notably, Miles has demonstrated extreme resilience during the post-training of frontier models like GLM 4.5, 4.6, and 4.7. Throughout these large-scale deployments on state-of-the-art models, we have never encountered a single collapse event, further proving the framework's industrial-grade stability.
+
+However, mismatch remains a silent, stochastic threat. After hundreds of attempts, we successfully captured a rare, specific run of an MoE task that finally exhibited a clear collapse. It is worth noting that even this specific task does not collapse if re-trained from scratch; the failure only occurred in that one specific, non-deterministic trajectory.
+
+By isolating the checkpoint immediately preceding that rare collapse, we gained a unique "laboratory" to test our solutions. We confirmed that while the baseline training consistently collapses when resumed from this specific "poisoned" state, our Algorithmic Mitigation (MIS/TIS) successfully rescues the run and stabilizes the training.
+
+This confirms a critical insight: for Miles, training-inference mismatch is not a daily occurrence, but a rare "black swan" event. Our tools are designed as a surgical fail-safe to ensure that even these 1-in-300 edge cases—or the extreme pressures of training the next generation of frontier models—cannot derail your progress.
 
 ## Why Training and Inference Can Be Different
 
