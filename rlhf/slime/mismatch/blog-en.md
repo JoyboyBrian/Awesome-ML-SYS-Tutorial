@@ -12,7 +12,6 @@ The SGLang RL Team and the Miles community have recently conducted some interest
 
 - [Support FSDP2 as A Flexible Training Backend for Miles](https://lmsys.org/blog/2025-12-03-miles-fsdp/): adding FSDP2 as a flexible training backend to support architecture-innovative models and align with Megatron.
 
-
 In this post, we further discuss the first work and share our understanding of the training-inference mismatch problem and our proposed solutions.
 
 "Training-Inference Mismatch" refers to the numerical inconsistencies that arise between the rollout (inference) engine and the training engine. Even when utilizing identical model weights, these engines often produce divergent log-probabilities for the same token sequence. In this post, we analyze the root causes of this divergence and present Miles' dual-approach solution.
@@ -428,11 +427,13 @@ Any mismatch solving tool can be found in Miles (or its upstream Miles)!
 
 Bytedance Inc: Yingru Li, Jiacai Liu, Yuxuan Tong, Qian Liu, Hongyu Lu, Ziheng Jiang
 
-SGLang RL Team: Changyi Yang, Chenxing Xie, Zilin Zhu, Ji Li, Yuzhen Zhou
+SGLang RL Team: Changyi Yang, Zhuohao Li, Chenxing Xie, Zilin Zhu, Ji Li, Yuzhen Zhou
 
-RadixArk Miles Team: Chenyang Zhao, Yueming Yuan, Jiajun Li, Banghua Zhu, Tom, Yusheng Su
+RadixArk Miles Team: Chenyang Zhao, Mao Cheng, Yueming Yuan, Jiajun Li, Banghua Zhu, Tom, Yusheng Su
 
 We sincerely thanks Qiwei Di, Xuheng Li, Heyang Zhao and Prof. Quanquan Gu from UCLA, as well as Liyuan Liu and Feng Yao from Thinking Machines Lab for their valuable suggestions and discussions.
+
+This work is done during the final weeks when Chenyang was a PhD student at UCLA and a student researcher at ByteDance Seed. Thanks to all the support along the way.
 
 ## Reference
 
