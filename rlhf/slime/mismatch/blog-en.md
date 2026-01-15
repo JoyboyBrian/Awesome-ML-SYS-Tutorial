@@ -62,14 +62,37 @@ We provide these options to the community and try our best to make RL training m
 
 As we revealed, the key to fully eliminating the mismatch is to align all the operator backends between training and rollout—making every operation in training and inference bitwise-identical. To achieve this goal, we carefully selected the kernels we used for each model component.
 
-Specifically, we use batch-invariant kernels: This is a prerequisite for Truly On Policy, and we adopted the kernels from the Thinking Machines. This implementation provides the batch-invariant kernels for RMSNorm, Matmul, and other common operators, including log_softmax and mean. 
+Specifically, we use batch-invariant kernels: This is a prerequisite for Truly On Policy, and we adopted the kernels from the Thinking Machines. This implementation provides the batch-invariant kernels for RMSNorm, Matmul, and other common operators, including log_softmax and mean.
 
-Based on this implementation, we added the following implementations and optimizations:
+Based on this implementation, we added the following implementations and optimizations to FSDP:
 
 - FlashAttention-3: We use the Flash Attention 3 backend for both training and inference, since it achieves bitwise equality between prefill and decode operations while staying efficient compared to the Triton version. It also supports Radix Cache.
 - DeepGEMM: In our Truly On Policy implementation, we used DeepGEMM's fast matrix multiplication as a deterministic backend, which is more efficient. For different input sizes, DeepGEMM will use a fixed reduction order and tensor core instruction, which is independent of the shape changes.
-- Torch.compile(): To improve efficiency when enabling Truly On Policy, we use torch.compile to speed up by avoiding many tiny kernels. Some operations, for example, RoPE is also compiled to speed up.
+- Torch.compile: To improve efficiency when enabling Truly On Policy, we use torch.compile to speed up by avoiding many tiny kernels. Some operations, for example, RoPE is also compiled to speed up.
 - Numeric alignment: We also align numeric operation details between the two systems for simplicity, such as op dtype, detailed kernels, etc.
+
+To Megatron, the implementation is similar. At the final point, we get the log probs of SGLang and Megatron/FSDP into bitwise identical, leading to strict 0 training-inference KL divergence.
+
+
+<div align="center">
+  <img src="https://raw.githubusercontent.com/radixark/miles/refs/heads/main/examples/true_on_policy_vlm/diff.png" alt="Truly On Policy" width="50%">
+</div>
+
+<div align="center">
+  <img src="https://raw.githubusercontent.com/radixark/miles/refs/heads/main/examples/true_on_policy/src/train_rollout_abs_diff.png" alt="Truly On Policy" width="50%">
+</div>
+
+<div align="center">
+  <img src="./pics/megatron-truly-on-policy.png" alt="Megatron Truly On Policy" width="50%">
+</div>
+
+<!-- 这三张图展示了我们在三种 setting 下（FSDP + VLM + Dense Model，FSDP + LLM + Dense Model，Megatron + LLM + Dense Model ）Truly On Policy 特性的效果。注意到，在开启 Truly On Policy 模式后，训练和推理的 log probs 的绝对差值都严格为 0，这证明了我们 Truly On Policy feature 的有效性。
+
+需要格外强调的是，即便我们已经付出了相当多的努力，Truly On Policy 仍旧处于初始阶段。对于不同的模型架构，各种并行策略，甚至是不同的硬件设备，每个变量都引入了指数级的复杂度。我们仍旧在不断探索和优化 Truly On Policy 的实现，并且如我们前文所述，目前的 Truly On Policy 模式只能对 Valina Dense LLM 模型有效。在 Dense 模型上，我们从未观察到 Miles 因为 training-inference mismatch 而 collapse。因此，即便开启了 Truly On Policy 模式，我们并没有见到 reward 等指标有更好的趋势。而且，Truly On Policy 模式由于会对 Megatron 和 FSDP 的实现进行许多侵入性修改，一方面导致复现困难，另一方面性能上也相比原生实现有一定损失。 -->
+
+These three figures demonstrate the effects of our Truly On Policy feature under three different settings (FSDP + VLM + Dense Model, FSDP + LLM + Dense Model, and Megatron + LLM + Dense Model). Notably, after enabling Truly On Policy mode, the absolute difference between training and inference log probs is strictly bit-wise identical, which proves the effectiveness of our Truly On Policy feature.
+
+⚠️ It is important to emphasize that despite our significant efforts, Truly On Policy is still in its early stages. Different model architectures, various parallelization strategies, and even different hardware devices each introduce exponential levels of complexity. We are continuing to explore and optimize the implementation of Truly On Policy. As mentioned earlier, the current Truly On Policy mode is only effective for vanilla dense LLM models. On dense models, we have never observed Miles collapsing due to training-inference mismatch. Therefore, even with Truly On Policy enabled, we haven't seen better trends in metrics like rewards. Furthermore, because Truly On Policy requires many invasive modifications to the implementations of Megatron and FSDP, it is difficult to reproduce and suffers from some performance loss compared to native implementations.
 
 ## Algorithmic Mitigation
 
@@ -77,7 +100,7 @@ Based on this implementation, we added the following implementations and optimiz
   <img src="pics/algorithmic-mitigation.png" alt="Algorithmic Mitigation" width="50%">
 </div>
 
-Let's first look at why this mismatch matters from an algorithmic perspective. The original PPO objective is shown below, where \(\pi_\theta\) denotes the current policy being optimized and used to compute the training loss, and \(\pi_{\text{old}}\) denotes the behavior policy that generated the rollout data (i.e., the action probabilities from the model before the current update step).
+Let's further look at why this mismatch matters from an algorithmic perspective. The original PPO objective is shown below, where $\pi_\theta$ denotes the current policy being optimized and used to compute the training loss, and $\pi_{\text{old}}$ denotes the behavior policy that generated the rollout data (i.e., the action probabilities from the model before the current update step).
 
 $$\mathcal{L}_{\text{PPO}}(\theta)
 = - \mathbb{E}_{x \sim \mathcal{D}} \mathbb{E}_{y \sim \pi_{\textcolor{red}{\text{old}}}} \left[
