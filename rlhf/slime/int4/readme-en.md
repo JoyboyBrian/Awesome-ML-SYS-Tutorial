@@ -6,7 +6,7 @@
 
 Recently, the SGLang RL team, slime community, Ant Group Asystem & Afu Infra team, and RadixArk team have made significant progress in RL training stability, efficiency, and application scenarios, including:
 
-- **INT4 QAT RL End-to-End Practice**: We implemented a complete QAT INT4 closed-loop solution from training to inference and provided a detailed [technical plan](https://github.com/zhaochenyang20/Awesome-ML-SYS-Tutorial/blob/main/rlhf/slime/int4/readme.md), significantly improving rollout efficiency and stability.
+- **INT4 QAT RL End-to-End Practice**: We implemented a complete QAT INT4 closed-loop solution from training to inference and provided a detailed [technical recipe](https://github.com/zhaochenyang20/Awesome-ML-SYS-Tutorial/blob/main/rlhf/slime/int4/readme-en.md), significantly improving rollout efficiency and stability.
 - **Unified Multi-Turn VLM/LLM Training**: We provided an implementation for the VLM multi-turn sampling paradigm [blog](https://github.com/zhaochenyang20/Awesome-ML-SYS-Tutorial/blob/main/rlhf/slime/vlm-multi-turn/readme.md). Developers only need to write a customized `rollout` function to easily start multi-turn RL for VLM, just like training LLM.
 - **Multi-Agent Training**: Thanks to the excellent decoupled design of the sampling function, we released a Multi-Agent RL solution [MrlX](https://github.com/AQ-MedAI/MrlX), providing a typical collaborative training reference for the community.
 - **Stability Improvement**: We implemented the **[Rollout Router Replay](https://github.com/THUDM/slime/blob/58525eb986c66a271aa31077e17b8afebe704b4f/tests/test_qwen3_30B_A3B_r3.py#L79)** mechanism, significantly improving RL stability for MoE models during RL training.
