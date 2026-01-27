@@ -4,7 +4,7 @@
 >
 > 受 Kimi K2 团队启发，SGLang RL 团队成功落地了 INT4 **量化感知训练（QAT）** 流程方案。通过“训练端伪量化 + 推理端真实量化（W4A16）”的方案组合，我们实现了媲美 BF16 全精度训练的稳定性与训推一致性，同时 INT4 极致压缩也将 1TB 级超大模型的采样任务容纳于单机 H200 (141G) 显存内，消除了跨机通信瓶颈，显著提高了 Rollout 效率，为社区提供了兼顾高性能与低成本的开源参考。
 
-近期，SGLang RL 团队，slime 社区，蚂蚁集团 Asystem & 阿福 Infra 团队与 RadixArk 团队，在强化学习的训练稳定性，训练效率与适用场景方面取得了重要进展，具体包括：
+近期，SGLang RL 团队在强化学习的训练稳定性，训练效率与适用场景方面取得了重要进展，具体包括：
 
 
 - **INT4 QAT RL 全流程实践**：我们实现了从训练到推理的完整 QAT INT4 闭环的方案，并提供了详细的[技术方案](https://github.com/zhaochenyang20/Awesome-ML-SYS-Tutorial/blob/main/rlhf/slime/int4/readme.md)，显著提升了 Rollout 的效率与稳定性。
@@ -23,7 +23,7 @@
 - **训推一致**：训练端利用 QAT 确保权重符合 INT4 分布，推理端执行 W4A16 (Weights INT4, activations BF16 ) 计算；二者均通过 BF16 Tensor Core 进行运算，实现了媲美 BF16 全精度的训推一致性。
 - **单机效率倍增**：在超大模型场景下，INT4 策略大幅降低了显存与带宽压力，Rollout 效率显著超越 W8A8 (Weights FP8 , Activations FP8）。
 
-本项目由 **SGLang RL 团队、 InfiXAI 团队、蚂蚁集团 Asystem & 阿福 Infra 团队，slime 团队与 RadixArk 团队**联合完成。相关功能与 recipe 已经同步到了 [slime](https://github.com/THUDM/slime) 与 [Miles](https://github.com/radixark/miles) 社区，欢迎大家试用与贡献。我们也在更进一步向 MXFP8 与 NVFP4 发起挑战。
+本项目由 **SGLang RL 团队、 InfiXAI 团队、蚂蚁集团 Asystem & 阿福 Infra 团队，slime 团队与 RadixArk 团队**联合完成。相关功能与 recipe 已经同步到了 [slime](https://github.com/THUDM/slime) 与 [Miles](https://github.com/radixark/miles) 社区，欢迎大家试用与贡献。我们也在更进一步向 MXFP8 与 NVFP4 发起挑战。同时，由衷感谢 [Verda Cloud](https://www.linkedin.com/company/verda-cloud/) 为本工作提供的计算资源。
 
 ## 技术方案概览
 

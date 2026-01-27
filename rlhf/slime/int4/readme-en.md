@@ -4,7 +4,7 @@
 >
 > Inspired by the Kimi K2 team, the SGLang RL team successfully landed an INT4 **Quantization-Aware Training (QAT)** pipeline. By combining **fake quantization during training** with **real quantization at inference (W4A16)**, we achieved stability and train–infer consistency comparable to BF16 full-precision training. Meanwhile, extreme INT4 compression allows single-node rollout for ~1TB-scale models, eliminating cross-node communication bottlenecks and significantly improving rollout efficiency—an open-source reference that balances high performance and low cost.
 
-Recently, the SGLang RL team, slime community, Ant Group Asystem & Afu Infra team, and RadixArk team have made significant progress in RL training stability, efficiency, and application scenarios, including:
+Recently, the SGLang RL team has made significant progress in RL training stability, efficiency, and application scenarios, including:
 
 - **INT4 QAT RL End-to-End Practice**: We implemented a complete QAT INT4 closed-loop solution from training to inference and provided a detailed [technical recipe](https://github.com/zhaochenyang20/Awesome-ML-SYS-Tutorial/blob/main/rlhf/slime/int4/readme-en.md), significantly improving rollout efficiency and stability.
 - **Unified Multi-Turn VLM/LLM Training**: We provided an implementation for the VLM multi-turn sampling paradigm [blog](https://github.com/zhaochenyang20/Awesome-ML-SYS-Tutorial/blob/main/rlhf/slime/vlm-multi-turn/readme.md). Developers only need to write a customized `rollout` function to easily start multi-turn RL for VLM, just like training LLM.
@@ -21,7 +21,7 @@ Building on top of these, we went one step further: on the slime framework, we r
 - **Train–infer consistency**: Training uses QAT to shape weights into an INT4-friendly distribution; inference uses W4A16 (INT4 weights, BF16 activations). Both rely on BF16 Tensor Cores, achieving train–infer consistency comparable to BF16 full precision.
 - **Single-node efficiency doubling**: For very large models, INT4 greatly reduces VRAM and bandwidth pressure, delivering rollout efficiency significantly higher than W8A8 (FP8 weights, FP8 activations).
 
-This project is jointly completed by the **SGLang RL team, InfiXAI team, Ant Group Asystem & Afu Infra team, slime team, and RadixArk team**. Related features and recipes have been synced to the [slime](https://github.com/THUDM/slime) and [Miles](https://github.com/radixark/miles) communities. We welcome everyone to try them out and contribute. We are also further challenging ourselves with MXFP8 and NVFP4.
+This project is jointly completed by the **SGLang RL team, InfiXAI team, Ant Group Asystem & Afu Infra team, slime team, and RadixArk team**. Related features and recipes have been synced to the [slime](https://github.com/THUDM/slime) and [Miles](https://github.com/radixark/miles) communities. We welcome everyone to try them out and contribute. We are also further challenging ourselves with MXFP8 and NVFP4. We also gratefully acknowledge [Verda Cloud](https://www.linkedin.com/company/verda-cloud/) for compute resource sponsorship.
 
 ## Technical Overview
 
