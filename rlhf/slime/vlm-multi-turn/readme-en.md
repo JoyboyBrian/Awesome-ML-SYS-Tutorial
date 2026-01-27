@@ -1,14 +1,20 @@
 # One Rollout to Rule Them All: Seamless Multi-Turn RL for LLM and VLM
 
-## TL;DR
+> 💡 **TL;DR:**  We've unified LLM and VLM training in slime. With our decoupled design, you can now write a single custom `rollout` function to enable multi-turn reinforcement learning (Agentic Multi-turn RL) for VLMs, and it's just like you would do for LLMs.
 
-<aside>
+Recently, the SGLang RL team has made significant progress in RL training stability, efficiency, and application scenarios, including:
 
-We've unified LLM and VLM training in slime. With our decoupled design, you can now write a single custom `rollout` function to enable multi-turn reinforcement learning (Agentic Multi-turn RL) for VLMs, and it's just like you would do for LLMs.
+- **INT4 QAT End-to-End Training**: We implemented a complete QAT INT4 closed-loop solution from training to inference and provided a detailed [technical recipe](https://github.com/zhaochenyang20/Awesome-ML-SYS-Tutorial/blob/main/rlhf/slime/int4/readme-en.md), significantly improving rollout efficiency and stability.
+- **Unified Multi-Turn VLM/LLM Training**: We provided an implementation for the VLM multi-turn sampling paradigm [blog](https://github.com/zhaochenyang20/Awesome-ML-SYS-Tutorial/blob/main/rlhf/slime/vlm-multi-turn/readme.md). Developers only need to write a customized `rollout` function to easily start multi-turn RL for VLM, just like training LLM.
+- **Rollout Router Replay**: We implemented the **[Rollout Router Replay](https://github.com/THUDM/slime/blob/58525eb986c66a271aa31077e17b8afebe704b4f/tests/test_qwen3_30B_A3B_r3.py#L79)** mechanism, significantly improving RL stability for MoE models during RL training.
+- **FP8 End-to-End Training**: We successfully implemented **[end-to-end FP8 training and sampling](https://lmsys.org/blog/2025-11-25-fp8-rl/)** in RL scenarios, further unlocking hardware performance.
+- **Speculative Decoding**: We successfully implemented **[speculative decoding](https://thudm.github.io/slime/advanced/speculative-decoding.html)** in RL scenarios, significantly improving rollout efficiency.
 
-</aside>
+In this sense, we further share the design of unifying VLM and LLM multi-turn RL training paradigms, hoping to provide a first-principles-based multi-turn RL solution for the community.
 
-# Introduction
+Thanks to the SGLang RL team, Amazon AGI SF Lab, and the slime & Miles community for their contributions. Thanks to [Verda Cloud](https://www.linkedin.com/company/verda-cloud/) for providing computing resources for this work.
+
+## Introduction
 
 Unlike traditional single-turn rollout, Agentic VLMs involves continuous interaction. Instead of generating a "final answer", the model acts as a decision-making role that evolves through an iterative cycle of executing actions and perceiving observations. In each turn, the model  interacts with the environment, and each round of feedback gives the model more information for its next move. This multi-turn interaction is how VLMs evolve into truly intelligent agents.
 
@@ -16,7 +22,7 @@ Take Computer Use Agents or embodied intelligence scenarios as examples, the mod
 
 This is exactly what slime, together with the Miles community, is tackling in VLM Agentic Training. Thanks to the elegant design we built during the LLM Multi-turn Training phase, you can simply pass your VLM Agent interaction logic through the `--rollout-function-path` parameter. This seamlessly connects the full pipeline: "autonomous generation → environmental interaction → multimodal observation feedback → iterative reasoning". Our design philosophy for Agentic Multi-Turn RL stays consistent: extreme decoupling. Rollout logic isn't tied to any specific dataset format or interaction protocol. How the environment parses actions, executes tools, or provides observations—that's all up to you. This gives you complete freedom to evolve your agents however you want.
 
-# Core Design
+## Core Design
 
 As we keep saying, from first principles, multi-turn training really just needs you to define **sampling and interaction logic**.
 
@@ -28,20 +34,22 @@ VLM multi-turn sampling isn't fundamentally different from LLM's—you just need
 
 1. **Initialize Task**: Extract the `prompt` and multimodal inputs from `Sample`, do the first-round encoding, and initialize `sample.tokens`, `image_data`, `multimodal_train_inputs_buffer`, etc. This sets up the context for the multi-turn loop.
 
-1. **Model Generation**: The model generates actions for this round, we append them to the context, and set the loss mask position to 1.
+2. **Model Generation**: The model generates actions for this round, we append them to the context, and set the loss mask position to 1.
 
-1. **Environment Processes Action**: We pass the model output to the environment, which returns an observation (might include multimodal content).
+3. **Environment Processes Action**: We pass the model output to the environment, which returns an observation (might include multimodal content).
 
-1. **Append Observation to Context**: We encode the observation as input for the next round.
-    - Get clean `prompt_ids` (see [Engineering Appendix](https://www.notion.so/2e1ab71c210b8096bcb1ce296737fd90?pvs=21)), append to context, and set the `loss_mask` position to 0.
-    - For VLMs, observations might include new multimodal content, so we need to maintain concatenation of multi-turn multimodal data. This means keeping two chains in sync:
-        - Rollout's `image_data`: encode and append new images each round.
-        - Training-side `multimodal_train_inputs`: merge the tensors the processor produces each round.
+4. **Append Observation to Context**: We encode the observation as input for the next round.
 
-1. **Termination Conditions**: The loop stops when any of these conditions are met:
-    - **max_turn**: We hit the `max_turns` limit. Once reached, we stop regardless of whether the task is done.
-    - **token budget**: To avoid overly long sampling, we maintain a token budget. Each generation or observation append uses up some budget. When it's exhausted, we stop early and mark it as TRUNCATED to stay within context/generation limits.
-    - **env done**: The environment returns `done=True` in `env.step()`, meaning the task is complete or can't continue. Rollout stops immediately.
+- Get clean `prompt_ids` (see [Engineering Appendix](https://www.notion.so/2e1ab71c210b8096bcb1ce296737fd90?pvs=21)), append to context, and set the `loss_mask` position to 0.
+- For VLMs, observations might include new multimodal content, so we need to maintain concatenation of multi-turn multimodal data. This means keeping two chains in sync:
+    - Rollout's `image_data`: encode and append new images each round.
+    - Training-side `multimodal_train_inputs`: merge the tensors the processor produces each round.
+
+5. **Termination Conditions**: The loop stops when any of these conditions are met:
+
+- **max_turn**: We hit the `max_turns` limit. Once reached, we stop regardless of whether the task is done.
+- **token budget**: To avoid overly long sampling, we maintain a token budget. Each generation or observation append uses up some budget. When it's exhausted, we stop early and mark it as TRUNCATED to stay within context/generation limits.
+- **env done**: The environment returns `done=True` in `env.step()`, meaning the task is complete or can't continue. Rollout stops immediately.
     
 
 <img src="./pic/multi-turn.png" alt="multi-turn" style="width: 100%; height: auto; margin: 20px 0;">
@@ -94,7 +102,7 @@ We've defined some common interfaces for the environment (`BaseInteractionEnv`) 
 - `step(response_text: str) -> (observation: dict, done: bool, info: dict)`: Receive model output, return observation and whether it's finished
 - `format_observation(observation: dict) -> dict`: Convert observation into a chat message to be appended in the next round. If observation contains `multi_modal_data`, images will be put into message content.
 
-# Experimental Results
+## Experimental Results
 
 We tested our design by running Agentic Multi-Turn GRPO Training on `Qwen3-VL-2B-Instruct` using the [geo3k multimodal dataset](https://huggingface.co/datasets/VeraIsHere/geo3k_imgurl_processed), with Megatron-LM as the training backend (check out the [training script](https://github.com/THUDM/slime/blob/main/examples/geo3k_vlm_multi_turn/run_geo3k_vlm_multi_turn.py) for details). Here's what we found:
 <img src="./pic/short-turn-rollout.png" alt="short-turn-rollout" style="width: 100%; height: auto; margin: 20px 0;">
@@ -122,7 +130,7 @@ The raw reward still rises steadily and converges. Other metrics follow almost t
 
 Performance-wise, both training and sampling times go up compared to shorter contexts and fewer turns, and the sampling-to-training time ratio increases significantly—exactly what you'd expect. Just a heads up: if you set the context length or number of turns too high, you might hit OOM. Tune these parameters based on your hardware and use case.
 
-# Future Work
+## Future Work
 
 As the demand for multimodal agentic AI training grows, we need our VLM multi-turn RL to be more scalable and easier to debug.
 
@@ -142,6 +150,9 @@ As the demand for multimodal agentic AI training grows, we need our VLM multi-tu
     
     We need more fine-grained metrics going forward: distribution of actual turn counts, truncation reason breakdowns, env retry counts and types, etc. Right now, logging is mostly at the trajectory level, but when you're tuning parameters or debugging, you often need turn-level details. So we're planning to add per-turn logging support.
     
+## Acknowledgements
+
+Xiaole Guo, Nan Jiang, Zilin Zhu, Jin Pan, Jiajun Li, Yuzhe Zhou, Chengxing Xie, Yueming Yuan, Chenyang Zhao
 
 <style>
 details summary {
@@ -166,9 +177,9 @@ details summary h1 {
 }
 </style>
 <details>
-<summary><h1>Engineering Appendix</h1></summary>
+<summary><h2>Engineering Appendix</h2></summary>
 
-## Observation Token Encoding: Dummy Messages + Delta Tokens
+### Observation Tokens Encoding: Dummy Messages + Delta Tokens
 
 In multi-turn rollout, the environment returns an observation each round. We need to encode it into `prompt_ids` and append it to `sample.tokens` so the next generation can "see" the environmental feedback. You might think: just call `tokenizer.apply_chat_template([message], tools=...)` directly on the observation. But here's the catch: **chat templates automatically insert system prompts and tool usage instructions** (if `tools` isn't empty), like this:
 
@@ -208,7 +219,7 @@ trim = len(encode(dummy))
 obs_ids = encode(full)[trim:]   # delta tokens only
 ```
 
-## Handling Multi-Turn `multimodal_train_inputs`
+### Handling Multi-Turn `multimodal_train_inputs` Encoding
 
 In multi-turn rollout, when encoding observations each round, if you're using a VLM processor, it produces `multimodal_train_inputs` for training (a dict where values are usually `torch.Tensor`—think image features, etc.). The problem: **these are fragmented tensors produced per round, but training wants one big concatenated tensor**.
 

@@ -1,10 +1,23 @@
-# One Rollout to Rule Them All: Seamless Multi-Turn RL for LLM and VLM
+# 从第一性原理出发，统一 VLM 与 LLM 的 Multi-Turn Agentic RL
 
-> 💡 **TL;DR:** 我们在 slime 上实现了 LLM 与 VLM 训练范式的统一。得益于优秀的解耦设计，开发者现在只需编写一套定制化的 `rollout` 函数，即可像训练 LLM 一样，轻松开启 VLM 的多轮强化学习（Agentic Multi-turn RL）。
+> 💡 **TL;DR:** 我们在 slime 与 Miles 上实现了 LLM 与 VLM 训练范式的统一。得益于优秀的解耦设计，开发者现在只需编写一套定制化的 `rollout` 函数，即可像训练 LLM 一样，轻松开启 VLM 的多轮强化学习（Agentic Multi-turn RL）。
 
 </aside>
 
-# Introduction
+近期，SGLang RL 团队在强化学习的训练稳定性，训练效率与适用场景方面取得了重要进展，具体包括：
+
+
+- **INT4 QAT 全流程训练**：我们实现了从训练到推理的完整 QAT INT4 闭环的方案，并提供了详细的[技术方案](https://github.com/zhaochenyang20/Awesome-ML-SYS-Tutorial/blob/main/rlhf/slime/int4/readme.md)，显著提升了 Rollout 的效率与稳定性。
+- **Unified multi-turn VLM/LLM 多轮采样范式**：我们提供了 VLM 多轮采样范式的实现 [blog](https://github.com/zhaochenyang20/Awesome-ML-SYS-Tutorial/blob/main/rlhf/slime/vlm-multi-turn/readme.md)，开发者只需编写一套定制化的 `rollout` 函数，即可像训练 LLM 一样，轻松开启 VLM 的多轮强化学习。
+- **Rollout Router Replay**：我们实现了 **[Rollout Router Replay](https://github.com/THUDM/slime/blob/58525eb986c66a271aa31077e17b8afebe704b4f/tests/test_qwen3_30B_A3B_r3.py#L79)** 机制，显著提升了 MoE 模型在 RL 训练过程中的稳定性。
+- **FP8 全流程训练**：我们在 RL 场景中成功实现了 **[全流程 FP8 训练与采样](https://lmsys.org/blog/2025-11-25-fp8-rl/)**，进一步释放了硬件性能。
+- **投机采样**：我们在 RL 场景中成功实践了 **[投机采样](https://thudm.github.io/slime/advanced/speculative-decoding.html)**，实现了大规模训练的无损加速。
+
+在此基础上，我们进一步分享将 VLM 与 LLM multi-turn RL 训练范式统一的设计，希望为社区提供一个符合第一性原理的 multi-turn RL 解决方案。
+
+感谢 SGLang RL 团队，Amazon AGI SF Lab 与 slime & Miles 社区的贡献者们，由衷感谢 [Verda Cloud](https://www.linkedin.com/company/verda-cloud/) 为本工作提供的计算资源。
+
+## Introduction
 
 与传统的单次执行（Single-turn Inference）不同，Agentic VLM 的本质是连续交互。它不再是端到端地吐出一个“最终答案”，而是作为决策核心，在执行动作（Action）与感知环境（Observation）的往复循环中不断演进。每一次模型的输出都会对环境进行一次试探，而环境每一轮反馈又是为模型下一次采取行动提供更进一步的信息。这种与环境的多轮交互，是目前充满期待的 VLM 进化为真正智能体的必经之路。
 
@@ -12,7 +25,7 @@
 
 这正是 slime 协同 Miles 社区在 VLM Agentic Training 中致力攻克的核心场景。得益于其在 LLM Multi-turn Training 阶段就完成的优雅设计，用户仅需通过 `--rollout-function-path` 参数，即可传入为 VLM Agent 设计的交互逻辑，无缝衔接“自主生成 → 环境交互 → 多模态观测回传 → 迭代推理”的完整链路。我们保持对 Agentic Multi-Turn RL 一贯的设计哲学：极致解耦，Rollout 逻辑不与任何特定数据集格式或交互协议强绑定，“环境如何解析 Action、如何执行工具、如何反馈 Observation”完全由用户自由决定，为 Agent 的无限演进保留绝对的自由。
 
-# 核心设计
+## 核心设计
 
 正如我们反复强调的那样，从第一性原理出发，任何 multi-turn 训练本质上只需要定义**采样与交互逻辑即可。**
 
@@ -24,20 +37,22 @@ VLM 与 LLM 的多轮采样并无本质区别，只需要在在每一轮交互�
 
 1. **初始化任务**：从 `Sample` 提取 `prompt` 和多模态输入，完成首轮编码并初始化 `sample.tokens, image_data, multimodal_train_inputs_buffer` 等等，为后续的多轮循环提供初始化的上下文。
 
-1. **模型生成**：产生本回合执行的动作，追加到上下文，且将 loss mask 对应 position 设置为 1。
+2. **模型生成**：产生本回合执行的动作，追加到上下文，且将 loss mask 对应 position 设置为 1。
 
-1. 环境接受动作影响：把模型输出传递给 env，env 返回 observation (可能含多模态内容）。
+3. 环境接受动作影响：把模型输出传递给 env，env 返回 observation (可能含多模态内容）。
 
-1. **追加 observation 到上下文**：将 observation 编码成下一回合的输入。
-    - 获取干净的 `prompt_ids`（详见[工程附录](https://www.notion.so/2e1ab71c210b8096bcb1ce296737fd90?pvs=21) ) ，追加到上下文，且将 `loss_mask` 对应的position 设置为 0。
-    - 在 VLM 场景里，observation 可能带新的多模态内容，因此需要同时维护多轮多模态数据的拼接；具体来说，这里需要维护两条链路：
-        - rollout 的 `image_data`：每轮把新图片 encode 后 append。
-        - 训练侧的 `multimodal_train_inputs`：每轮 processor 产生的张量需要合并。
+4. **追加 observation 到上下文**：将 observation 编码成下一回合的输入。
 
-1. **终止条件**:由如下各种限制条件共同决定。
-    - max_turn: 最多执行 `max_turns` 轮交互，达到上限后无论任务是否完成都将被迫停止。
-    - token budget: 为避免采样长度过长，我们维护了一个可用 token 的预算，每次模型生成或追加 observation 都会消耗预算，一旦预算耗尽就提前停止并标记为截断（TRUNCATED），确保不会超过最大上下文或最大生成限制。
-    - env done: 环境在 `env.step()` 中返回 `done=True`，表示任务已完成或无法继续（例如已得到最终判定、进入终止状态等），rollout 立即停止，不再追加后续轮次。
+- 获取干净的 `prompt_ids`（详见[工程附录](https://www.notion.so/2e1ab71c210b8096bcb1ce296737fd90?pvs=21) ) ，追加到上下文，且将 `loss_mask` 对应的position 设置为 0。
+- 在 VLM 场景里，observation 可能带新的多模态内容，因此需要同时维护多轮多模态数据的拼接；具体来说，这里需要维护两条链路：
+    - rollout 的 `image_data`：每轮把新图片 encode 后 append。
+    - 训练侧的 `multimodal_train_inputs`：每轮 processor 产生的张量需要合并。
+
+5. **终止条件**:由如下各种限制条件共同决定。
+
+- max_turn: 最多执行 `max_turns` 轮交互，达到上限后无论任务是否完成都将被迫停止。
+- token budget: 为避免采样长度过长，我们维护了一个可用 token 的预算，每次模型生成或追加 observation 都会消耗预算，一旦预算耗尽就提前停止并标记为截断（TRUNCATED），确保不会超过最大上下文或最大生成限制。
+- env done: 环境在 `env.step()` 中返回 `done=True`，表示任务已完成或无法继续（例如已得到最终判定、进入终止状态等），rollout 立即停止，不再追加后续轮次。
     
 
 <div align="center">
@@ -92,7 +107,7 @@ async def generate(args, sample, sampling_params):
 - `step(response_text: str) -> (observation: dict, done: bool, info: dict)`：接收模型输出，返回观测与是否结束
 - `format_observation(observation: dict) -> dict`：把 observation 转成下一回合要追加的 chat message。如果 observation 带 `multi_modal_data`，会把图片放进 message content。
 
-# 实验结果
+## 实验结果
 
 基于上述设计，我们使用 [geo3k 多模态数据集](https://huggingface.co/datasets/VeraIsHere/geo3k_imgurl_processed)，对 `Qwen3-VL-2B-Instruct` 进行了 Agentic Multi-Turn GRPO Training，用 Megatron-LM 作为训练后端（具体可参考[训练脚本](https://github.com/THUDM/slime/blob/main/examples/geo3k_vlm_multi_turn/run_geo3k_vlm_multi_turn.py)）。实验效果如下：
 <div align="center">
@@ -125,7 +140,7 @@ async def generate(args, sample, sampling_params):
 
 性能方面，与短上下文长度、小轮的情况相比，训练时间和采样时间均有上升，并且采样时间与训练时间的比值也明显增大，这符合预期。注意，如果将上下文长度、轮数设置得过大，可能会出现OOM，需要根据自己的硬件条件和场景来合理设置参数。
 
-# 未来
+## 未来计划
 
 随着 multimodal agentic AI 的训练需求快速增长，我们的 VLM multi-turn RL 更要具备可扩展性和可诊断性。
 
@@ -145,6 +160,10 @@ async def generate(args, sample, sampling_params):
     
     未来需补充更细粒度的指标，例如：实际执行的轮数分布、截断原因分布、env retry 次数与类型等。同时，当前日志更多是整条轨迹的粒度，但调参和排障可能需要轮粒度的debug；因此也可以支持每轮的 logging。
     
+
+## Acknowledgements
+
+Xiaole Guo, Nan Jiang, Zilin Zhu, Jin Pan, Jiajun Li, Yuzhe Zhou, Chengxing Xie, Yueming Yuan, Chenyang Zhao
 
 <style>
 details summary {
@@ -169,9 +188,9 @@ details summary h1 {
 }
 </style>
 <details>
-<summary><h1>工程附录</h1></summary>
+<summary><h2>工程附录</h2></summary>
 
-## Observation tokens编码方式：dummy messages + delta tokens
+### Observation Tokens 编码方式：dummy messages + delta tokens
 
 在 multi-turn rollout 里，每一轮环境都会返回 observation，我们需要把它编码成 `prompt_ids` 追加到 `sample.tokens`，让下一轮生成能“看到”环境反馈。直觉上可以直接对observation 调用 `tokenizer.apply_chat_template([message], tools=...)` 进行编码，但这样会引入一个实际问题：**chat template 往往会自动插入system prompt以及 tool的使用说明**（若`tools`非空），示例如下：
 
@@ -211,7 +230,7 @@ trim = len(encode(dummy))
 obs_ids = encode(full)[trim:]   # delta tokens only
 ```
 
-## 多轮 `multimodal_train_inputs` 的处理
+### 多轮 `multimodal_train_inputs` 的处理
 
 在 multi-turn rollout 中，每一轮把 observation 编码进上下文时，如果使用了 VLM 的 processor，就会产出一份供训练侧使用的的 `multimodal_train_inputs`（一个 dict，value 往往是 `torch.Tensor`，例如图片相关的特征信息等）。关键问题是：**这些张量是按轮产生的碎片化 tensor，最终训练希望得到“拼起来的一整块 tensor”**。
 
